@@ -7,13 +7,14 @@ import { json, redirect } from "@remix-run/node";
 import { Form, Link, useActionData, useSearchParams } from "@remix-run/react";
 import { useEffect, useRef } from "react";
 
+import Button from "~/components/Button";
 import { createUser, getUserByEmail } from "~/models/user.server";
-import { createUserSession, getUserId } from "~/session.server";
-import { safeRedirect, validateEmail } from "~/utils";
+import { createUserSession, getUserFromSession } from "~/session.server";
+import { safeRedirect, validateEmail } from "~/utils/utils";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const userId = await getUserId(request);
-  if (userId) return redirect("/");
+  const user = await getUserFromSession(request);
+  if (user) return redirect("/");
   return json({});
 };
 
@@ -63,7 +64,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     redirectTo,
     remember: false,
     request,
-    userId: user.id,
+    user: user,
   });
 };
 
@@ -144,12 +145,9 @@ export default function Join() {
           </div>
 
           <input type="hidden" name="redirectTo" value={redirectTo} />
-          <button
-            type="submit"
-            className="w-full rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 focus:bg-blue-400"
-          >
+          <Button type="submit" className="w-full">
             Create Account
-          </button>
+          </Button>
           <div className="flex items-center justify-center">
             <div className="text-center text-sm text-gray-500">
               Already have an account?{" "}

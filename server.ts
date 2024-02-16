@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createServer } from "node:http";
 import path from "node:path";
 import url from "node:url";
 
@@ -11,6 +12,8 @@ import type { RequestHandler } from "express";
 import express from "express";
 import morgan from "morgan";
 import sourceMapSupport from "source-map-support";
+
+import { IO } from "~/sockets.server";
 
 sourceMapSupport.install();
 installGlobals();
@@ -27,10 +30,17 @@ async function run() {
       : createRequestHandler({
           build: initialBuild,
           mode: initialBuild.mode,
+          getLoadContext(_req, _res) {
+            return { IO };
+          },
         });
 
   const app = express();
   const metricsApp = express();
+
+  const server = createServer(app);
+  IO.attach(server);
+
   app.use(
     prom({
       metricsPath: "/metrics",
@@ -101,7 +111,7 @@ async function run() {
   app.all("*", remixHandler);
 
   const port = process.env.PORT || 3000;
-  app.listen(port, () => {
+  server.listen(port, () => {
     console.log(`✅ app ready: http://localhost:${port}`);
 
     if (process.env.NODE_ENV === "development") {
@@ -154,6 +164,9 @@ async function run() {
         return createRequestHandler({
           build,
           mode: "development",
+          getLoadContext(_req, _res) {
+            return { IO };
+          },
         })(req, res, next);
       } catch (error) {
         next(error);

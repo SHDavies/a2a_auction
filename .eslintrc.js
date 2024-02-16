@@ -32,7 +32,6 @@ module.exports = {
         "plugin:react/recommended",
         "plugin:react/jsx-runtime",
         "plugin:react-hooks/recommended",
-        "plugin:jsx-a11y/recommended",
         "prettier",
       ],
       settings: {
@@ -77,12 +76,28 @@ module.exports = {
         "prettier",
       ],
       rules: {
+        "@typescript-eslint/no-explicit-any": 0,
+        "@typescript-eslint/no-unused-vars": [
+          "error",
+          {
+            argsIgnorePattern: "^_",
+            varsIgnorePattern: "^_",
+            caughtErrorsIgnorePattern: "^_",
+          },
+        ],
+        "object-curly-spacing": ["error", "always"],
         "import/order": [
           "error",
           {
             alphabetize: { caseInsensitive: true, order: "asc" },
             groups: ["builtin", "external", "internal", "parent", "sibling"],
             "newlines-between": "always",
+          },
+        ],
+        "import/no-unresolved": [
+          "error",
+          {
+            ignore: ["zapatos/schema"],
           },
         ],
       },
@@ -116,13 +131,6 @@ module.exports = {
           version: 28,
         },
       },
-    },
-
-    // Cypress
-    {
-      files: ["cypress/**/*.ts"],
-      plugins: ["cypress"],
-      extends: ["plugin:cypress/recommended", "prettier"],
     },
 
     // Node

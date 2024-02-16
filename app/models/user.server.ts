@@ -1,63 +1,68 @@
-import type { Password, User } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-import { prisma } from "~/db.server";
+import { db } from "~/db.server";
 
-export type { User } from "@prisma/client";
-
-export async function getUserById(id: User["id"]) {
-  return prisma.user.findUnique({ where: { id } });
+export interface User {
+  id: string;
+  email: string;
+  is_admin: boolean;
 }
 
-export async function getUserByEmail(email: User["email"]) {
-  return prisma.user.findUnique({ where: { email } });
+export async function getUserById(id: string): Promise<User | undefined> {
+  return await db
+    .selectFrom("users")
+    .select(["id", "email", "is_admin"])
+    .where("id", "=", id)
+    .executeTakeFirstOrThrow();
 }
 
-export async function createUser(email: User["email"], password: string) {
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  return prisma.user.create({
-    data: {
-      email,
-      password: {
-        create: {
-          hash: hashedPassword,
-        },
-      },
-    },
-  });
+export async function getUserByEmail(email: string): Promise<User | undefined> {
+  return await db
+    .selectFrom("users")
+    .select(["id", "email", "is_admin"])
+    .where("email", "=", email)
+    .executeTakeFirst();
 }
 
-export async function deleteUserByEmail(email: User["email"]) {
-  return prisma.user.delete({ where: { email } });
+export async function createUser(
+  email: string,
+  password: string,
+): Promise<User> {
+  const hash = await bcrypt.hash(password, 10);
+
+  return db
+    .insertInto("users")
+    .columns(["email", "hash"])
+    .values({ email, hash })
+    .returning(["id", "email", "is_admin"])
+    .executeTakeFirstOrThrow();
 }
 
-export async function verifyLogin(
-  email: User["email"],
-  password: Password["hash"],
-) {
-  const userWithPassword = await prisma.user.findUnique({
-    where: { email },
-    include: {
-      password: true,
-    },
-  });
+export async function deleteUserByEmail(email: string) {
+  // return await db.deletes("users", { email }, { returning: [] }).run(pool);
+  return await db.deleteFrom("users").where("email", "=", email).execute();
+}
 
-  if (!userWithPassword || !userWithPassword.password) {
+export async function verifyLogin(email: string, password: string) {
+  // const userWithPassword = await db.selectOne('users', { email }).run(pool)
+  const userWithPassword = await db
+    .selectFrom("users")
+    .selectAll()
+    .where("email", "=", email)
+    .executeTakeFirstOrThrow();
+
+  if (!userWithPassword || !userWithPassword.hash) {
     return null;
   }
 
-  const isValid = await bcrypt.compare(
-    password,
-    userWithPassword.password.hash,
-  );
+  const isValid = await bcrypt.compare(password, userWithPassword.hash);
 
   if (!isValid) {
     return null;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { password: _password, ...userWithoutPassword } = userWithPassword;
+  const { hash: _password, ...userWithoutPassword } = userWithPassword;
 
   return userWithoutPassword;
 }
