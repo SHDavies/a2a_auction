@@ -43,7 +43,10 @@ function Alert({ alert }: { alert: AlertMeta }) {
       className="duration-200 ease-in-out transition"
       color={alert.color}
     >
-      {alert.message}
+      <div className="flex justify-between">
+        {alert.message}
+        {alert.link}
+      </div>
     </A>
   );
 }

@@ -28,10 +28,10 @@ export const AlertContextProvider = ({ children }: PropsWithChildren) => {
             ...alert,
             id: (Math.random() + 1).toString(36).substring(2),
           };
-          setAlerts([a, ...alerts]);
+          setAlerts((as) => [a, ...as]);
         },
         clearAlert(id) {
-          setAlerts(alerts.filter((a) => a.id !== id));
+          setAlerts((as) => as.filter((a) => a.id !== id));
         },
       }}
     >

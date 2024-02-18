@@ -28,7 +28,19 @@ export function createBid(bid: NewBid) {
       throw new Error("Bid is not greater than highest bid");
     }
 
-    return tx
+    const w = await tx
+      .insertInto("watches")
+      .values({
+        user_id: bid.user_id,
+        auction_item_id: bid.auction_item_id,
+      })
+      .onConflict((oc) =>
+        oc.constraint("watches_un").doUpdateSet({ user_id: bid.user_id }),
+      )
+      .returning("active")
+      .executeTakeFirstOrThrow();
+
+    const b = await tx
       .insertInto("bids")
       .values(bid)
       .returning((eb) =>
@@ -39,5 +51,7 @@ export function createBid(bid: NewBid) {
           .as("name"),
       )
       .executeTakeFirst();
+
+    return { watching: w.active, ...b };
   });
 }

@@ -1,25 +1,44 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 import { AdvancedImage, placeholder, responsive } from "@cloudinary/react";
 import { CloudinaryImage } from "@cloudinary/url-gen";
-import { Button, ButtonGroup } from "@material-tailwind/react";
+import {
+  Button,
+  ButtonGroup,
+  IconButton,
+  Tooltip,
+} from "@material-tailwind/react";
 import { LoaderFunctionArgs, json } from "@remix-run/node";
 import { Link, useFetcher, useLoaderData } from "@remix-run/react";
-import { useContext, useEffect, useState } from "react";
+import { memo, useContext, useEffect, useState } from "react";
 
 import BidModal from "~/components/BidModal";
 import Card from "~/components/Card";
+import CopyIcon from "~/components/icons/CopyIcon";
+import EyeDisabledIcon from "~/components/icons/EyeDisabledIcon";
+import EyeIcon from "~/components/icons/EyeIcon";
 import { AlertContext } from "~/contexts/AlertContext";
 import { CloudinaryContext } from "~/contexts/CloudinaryContext";
+import { LoaderContext } from "~/contexts/LoaderContext";
+import { useSocket } from "~/contexts/SocketContext";
 import { getAuctionItem } from "~/models/auction.server";
 import { createBid } from "~/models/bid.server";
-import { requireUser } from "~/session.server";
+import { checkForUserWatch, setWatch, unwatch } from "~/models/watches.server";
+import { getUserFromSession, requireUser } from "~/session.server";
 import { formatMoney, useOptionalUser } from "~/utils/utils";
 
-export const loader = async ({ params }: LoaderFunctionArgs) => {
+export const loader = async ({ params, request }: LoaderFunctionArgs) => {
+  const user = await getUserFromSession(request);
   const id = params["auctionId"];
   if (id) {
-    const auctionItem = await getAuctionItem(id);
-    return json(auctionItem);
+    const [auctionItem, isUserWatching] = await Promise.all([
+      getAuctionItem(id),
+      user ? checkForUserWatch(user.id, id) : Promise.resolve(false),
+    ]);
+    return json({
+      auctionItem,
+      isUserWatching,
+      showDebug: process.env.NODE_ENV === "development",
+    });
   }
   throw new Response("not found", { status: 404 });
 };
@@ -28,73 +47,94 @@ export const action = async ({
   params,
   request,
   context,
-}: LoaderFunctionArgs): Promise<{ success: boolean; message: string }> => {
+}: LoaderFunctionArgs): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+}> => {
   const user = await requireUser(request);
 
   const auction_item_id = params["auctionId"];
   if (auction_item_id) {
     const formData = await request.formData();
-    const amount = Number(formData.get("amount"));
-    if (isNaN(amount)) {
-      throw new Response("invalid bid", { status: 400 });
+    const intent = formData.get("intent");
+    switch (intent) {
+      case "newBid": {
+        const amount = Number(formData.get("amount"));
+        if (isNaN(amount)) {
+          throw new Response("invalid bid", { status: 400 });
+        }
+
+        let name;
+        let isWatching;
+        try {
+          const res = await createBid({
+            user_id: user.id,
+            auction_item_id,
+            amount,
+          });
+          name = res?.name;
+          isWatching = res?.watching;
+        } catch (e) {
+          return { success: false, message: String(e) };
+        }
+
+        context.IO.to(auction_item_id).emit("newBid", {
+          auctionItemId: auction_item_id,
+          amount,
+          itemName: name || undefined,
+          userId: user.id,
+        });
+
+        context.IO.to(`${auction_item_id}-page`).emit(
+          "updateAmount",
+          auction_item_id,
+          amount,
+        );
+
+        return { success: true, message: "ok", data: { isWatching } };
+      }
+      case "toggleWatch": {
+        const isWatching = formData.get("isWatching") === "true";
+        const w = { user_id: user.id, auction_item_id };
+        if (isWatching) {
+          await setWatch(w);
+        } else {
+          await unwatch(w);
+        }
+        return { success: true, message: "ok" };
+      }
     }
-
-    let name;
-    try {
-      const res = await createBid({
-        user_id: user.id,
-        auction_item_id,
-        amount,
-      });
-      name = res?.name;
-    } catch (e) {
-      return { success: false, message: String(e) };
-    }
-
-    context.IO.emit("newBid", {
-      auctionItemId: auction_item_id,
-      amount,
-      itemName: name || undefined,
-      userId: user.id,
-    });
-
-    return { success: true, message: "ok" };
   }
   throw new Response("not found", { status: 404 });
 };
 
 export default function AuctionPage() {
-  const auctionItem = useLoaderData<typeof loader>();
+  const { auctionItem, isUserWatching, showDebug } =
+    useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
   const alerts = useContext(AlertContext);
   const cloudinary = useContext(CloudinaryContext);
   const user = useOptionalUser();
+  const socket = useSocket();
+  const loading = useContext(LoaderContext);
 
   const [currentBid, setCurrentBid] = useState(
     Number(auctionItem.max_bid || auctionItem.starting_bid),
   );
   const [highlight, setHighlight] = useState(false);
-
+  const [copyText, setCopyText] = useState("Copy URL");
   const [photoUrl, setPhotoUrl] = useState<CloudinaryImage | null>(null);
 
-  // const handleNewBid = ({
-  //   amount,
-  //   auctionItemId,
-  // }: {
-  //   amount: number;
-  //   auctionItemId: string;
-  // }) => {
-  //   console.log("NEW BID!");
-  //   if (auctionItemId === auctionItem.id) {
-  //     setCurrentBid(amount);
-  //     setTimeout(() => {
-  //       setHighlight(true);
-  //     }, 500);
-  //     setTimeout(() => {
-  //       setHighlight(false);
-  //     }, 1200);
-  //   }
-  // };
+  const handleUpdateAmount = (auctionItemId: string, amount: number) => {
+    if (auctionItemId === auctionItem.id) {
+      setCurrentBid(amount);
+      setHighlight(true);
+      setTimeout(() => {
+        setHighlight(false);
+      }, 1200);
+    }
+  };
 
   useEffect(() => {
     const url = auctionItem.photo_id
@@ -102,7 +142,7 @@ export default function AuctionPage() {
       : null;
 
     setPhotoUrl(url);
-  }, []);
+  }, [auctionItem]);
 
   useEffect(() => {
     if (
@@ -118,15 +158,29 @@ export default function AuctionPage() {
     }
   }, [auctionItem]);
 
+  useEffect(() => {
+    if (socket) {
+      socket?.on("updateAmount", handleUpdateAmount);
+      socket.emit("joinPageRoom", auctionItem.id);
+      return () => {
+        socket?.off("updateAmount", handleUpdateAmount);
+        socket.emit("leavePageRoom", auctionItem.id);
+      };
+    }
+  }, [socket]);
+
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    if (fetcher.data?.success) {
+    if (fetcher.data?.success && fetcher.formData?.get("intent") === "newBid") {
       setOpen(false);
       alerts?.addAlert({
         message: "Your bid was successful!",
         color: "green",
       });
+      if (fetcher.data.data.isWatching) {
+        socket?.emit("joinRoom", auctionItem.id);
+      }
     } else if (fetcher.data && !fetcher.data.success && fetcher.data.message) {
       setOpen(false);
       alerts?.addAlert({
@@ -135,6 +189,14 @@ export default function AuctionPage() {
       });
     }
   }, [fetcher.data]);
+
+  useEffect(() => {
+    if (fetcher.state !== "idle") {
+      loading?.startLoading();
+    } else {
+      loading?.finishLoading();
+    }
+  }, [fetcher.state]);
 
   const bid = Number(auctionItem.max_bid || auctionItem.starting_bid);
   const defaultIncrease = bid + (bid <= 10 ? 1 : 10);
@@ -149,6 +211,28 @@ export default function AuctionPage() {
 
   const toggleModal = () => {
     setOpen(!open);
+  };
+
+  const sendTestEvent = () => {
+    socket?.emit("testEvent", auctionItem.id);
+  };
+
+  const toggleWatch = () => {
+    const isWatching = !isUserWatching;
+    fetcher.submit({ intent: "toggleWatch", isWatching }, { method: "put" });
+    if (isWatching) {
+      socket?.emit("joinRoom", auctionItem.id);
+    } else {
+      socket?.emit("leaveRoom", auctionItem.id);
+    }
+  };
+
+  const copyLink = async () => {
+    await navigator.clipboard.writeText(location.href);
+    setCopyText("Copied!");
+    setTimeout(() => {
+      setCopyText("Copy URL");
+    }, 3000);
   };
 
   return (
@@ -168,19 +252,41 @@ export default function AuctionPage() {
       >
         Back to Auctions
       </Link>
+      {showDebug ? (
+        <Button
+          type="button"
+          onClick={sendTestEvent}
+          className="!absolute !bottom-4 !left-4"
+        >
+          Test Event
+        </Button>
+      ) : null}
       <Card className="flex !w-[60vw] max-w-none relative">
-        <div className="image-container w-5/12 max-h-[60vh] !justify-start min-h-64">
-          {photoUrl ? (
-            <AdvancedImage
-              cldImg={photoUrl}
-              plugins={[responsive(), placeholder()]}
-            ></AdvancedImage>
-          ) : null}
+        <div className="image-container w-5/12 max-h-[60vh] min-h-80">
+          {photoUrl ? <ItemImage image={photoUrl} /> : null}
         </div>
-        <div className="grow flex-col flex items-end">
-          <h1 className="text-3xl font-bold mb-4 text-gray-800">
+        <div className="grow flex-col flex items-end ml-3">
+          <h1 className="text-3xl font-bold text-gray-800">
             {auctionItem.name}
           </h1>
+          <div>
+            <Tooltip
+              content={copyText}
+              className="border border-blue-gray-50 bg-gray-50 px-4 py-3 shadow-xl shadow-black/10 text-gray-800"
+            >
+              <IconButton type="button" variant="text" onClick={copyLink}>
+                <CopyIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip
+              content={isUserWatching ? "Unfollow" : "Follow"}
+              className="border border-blue-gray-50 bg-gray-50 px-4 py-3 shadow-xl shadow-black/10 text-gray-800"
+            >
+              <IconButton type="button" variant="text" onClick={toggleWatch}>
+                {isUserWatching ? <EyeDisabledIcon /> : <EyeIcon />}
+              </IconButton>
+            </Tooltip>
+          </div>
           <p className="italic text-sm text-gray-500 mb-8">
             {auctionItem.description}
           </p>
@@ -235,3 +341,13 @@ export default function AuctionPage() {
     </div>
   );
 }
+
+const ItemImage = memo(function ItemImage({
+  image,
+}: {
+  image: CloudinaryImage;
+}) {
+  return (
+    <AdvancedImage cldImg={image} plugins={[responsive(), placeholder()]} />
+  );
+});

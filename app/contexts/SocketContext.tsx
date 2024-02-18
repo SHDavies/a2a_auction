@@ -5,7 +5,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { Socket } from "socket.io-client";
 
 import { C2SEvents, S2CEvents } from "~/models/socket";
-import { useOptionalUser } from "~/utils/utils";
+import { formatMoney, useOptionalUser } from "~/utils/utils";
 
 import { AlertContext } from "./AlertContext";
 
@@ -29,19 +29,11 @@ export function SocketProvider({ socket, children }: ProviderProps) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (user && socket && !connected) {
+    if (user && socket) {
       setConnected(true);
       socket.emit("init", user.id);
 
       socket.on("newBid", handleBid);
-      console.log("listening for newBid");
-
-      socket.onAny((e, ...args) => {
-        console.log(e, args);
-      });
-      socket.onAnyOutgoing((e, ...args) => {
-        console.log(e, args);
-      });
 
       return () => {
         socket?.off("newBid", handleBid);
@@ -49,12 +41,17 @@ export function SocketProvider({ socket, children }: ProviderProps) {
     }
 
     if (socket?.disconnected && connected) {
-      setConnected(false);
-      alerts?.addAlert({
-        message:
-          "Auction updates are not currently working. Please refresh the page to reconnect.",
-        color: "red",
-      });
+      // Give the socket 3 seconds to reconnect
+      setTimeout(() => {
+        if (socket.disconnected) {
+          setConnected(false);
+          alerts?.addAlert({
+            message:
+              "Auction updates are not currently working. Please refresh the page to reconnect.",
+            color: "red",
+          });
+        }
+      }, 3000);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [socket, user]);
@@ -72,12 +69,12 @@ export function SocketProvider({ socket, children }: ProviderProps) {
   }) => {
     if (alerts && user?.id !== userId) {
       alerts.addAlert({
-        message: `Someone has bid ${amount} on ${
-          itemName ?? "an item you're watching"
+        message: `Someone has bid ${formatMoney(amount)} on ${
+          itemName ?? "an item you're following"
         }`,
         color: "blue",
-        link: (
-          <Link to={`/auctions/${auctionItemId}`} prefetch="intent">
+        link: !window.location.pathname.includes(auctionItemId) && (
+          <Link to={`/auctions/${auctionItemId}`} prefetch="render">
             <Button variant="outlined">View Item</Button>
           </Link>
         ),

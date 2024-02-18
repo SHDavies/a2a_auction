@@ -28,6 +28,7 @@ import ButtonLink from "./components/ButtonLink";
 import Header from "./components/Header";
 import { AlertContextProvider } from "./contexts/AlertContext";
 import { CloudinaryContext } from "./contexts/CloudinaryContext";
+import LoaderProvider from "./contexts/LoaderContext";
 import { SocketProvider } from "./contexts/SocketContext";
 import { S2CEvents, C2SEvents } from "./models/socket";
 
@@ -87,15 +88,17 @@ export default function App() {
         <Links />
       </head>
       <body className="h-full bg-gray-100">
-        <AlertContextProvider>
-          <SocketProvider socket={socket}>
-            <CloudinaryContext.Provider value={cloudinary}>
-              <Alerts />
-              <Header loggedIn={!!user} />
-              <Outlet />
-            </CloudinaryContext.Provider>
-          </SocketProvider>
-        </AlertContextProvider>
+        <LoaderProvider>
+          <AlertContextProvider>
+            <SocketProvider socket={socket}>
+              <CloudinaryContext.Provider value={cloudinary}>
+                <Alerts />
+                <Header loggedIn={!!user} />
+                <Outlet />
+              </CloudinaryContext.Provider>
+            </SocketProvider>
+          </AlertContextProvider>
+        </LoaderProvider>
         <ScrollRestoration />
         <Scripts />
         <LiveReload />

@@ -43,6 +43,7 @@ export default function BidModal({
             submitted amount if it is the winning bid
           </p>
           <fetcher.Form method="post">
+            <input type="hidden" name="intent" value="newBid" />
             <p className="font-bold mt-4">Your bid:</p>
             <Input
               decorator="$"

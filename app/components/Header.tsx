@@ -2,6 +2,7 @@ import { Form, Link } from "@remix-run/react";
 
 import Button from "./Button";
 import ButtonLink from "./ButtonLink";
+import ProgressBar from "./ProgressBar";
 
 export default function Header({ loggedIn = false }: { loggedIn?: boolean }) {
   return (
@@ -25,6 +26,9 @@ export default function Header({ loggedIn = false }: { loggedIn?: boolean }) {
           <ButtonLink to="/join">Sign Up</ButtonLink>
         </div>
       )}
+      <div className="w-full absolute -bottom-1 left-0">
+        <ProgressBar />
+      </div>
     </header>
   );
 }
